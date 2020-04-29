@@ -45,7 +45,7 @@ Biblioteca ranas.dll
     <br> ranas.h: [Descárgalo de aquí](http://avellano.usal.es/~ssooii/RANAS/WINDOWS/ranas.h)
 
 
-Las funciones que la biblioteca exporta para que las uséis se muestran a continuación. Si una función devuelve un BOOL, un valor de TRUE indica que no ha habido errores y FALSE, lo contrario:<br>
+Las funciones que la biblioteca exporta para que las uséis se muestran a continuación. Si una función devuelve un BOOL, un valor de TRUE indica que no ha habido errores y FALSE, lo contrario:
     - `BOOL InicioRanas(int delta_t, int lTroncos[],int lAguas[],int dirs[],int t_Criar, TIPO_CRIAR f_Criar)`<br>
     El hilo principal debe llamar a esta función cuando desee que la simulación comience. Los argumentos son:
         <br>
