@@ -53,7 +53,7 @@ long nacidas = 0, salvadas = 0, perdidas = 0;
 int *posX = NULL, *posY = NULL;
 unsigned int contador = 0;
 
-//MAIN
+//MAIN Comentario
 int main(int argc, char* argv[])
 {
 	system("mode con:cols=80 lines=25"); //FIJA AUTOMÁTICAMENTE A 80x25
