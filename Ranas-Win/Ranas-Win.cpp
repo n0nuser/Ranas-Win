@@ -43,7 +43,7 @@ struct funcionesDLL {
 //FUNCIONES
 void tratarArg(int argc, char* argv[]);
 int cargarRanas();
-TIPO_CRIAR f_criar(int pos);
+void f_criar(int pos);
 DWORD WINAPI moverRanas(LPVOID lpParam);
 void avanzarRana(int* posX, int* posY, int dir);
 
@@ -103,7 +103,7 @@ int main(int argc, char* argv[])
 }
 
 // Funcion f_criar
-TIPO_CRIAR f_criar (int pos) {
+void f_criar (int pos) {
 	int nose = 0;
 	//Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
 	pos = 0;
