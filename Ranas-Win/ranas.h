@@ -9,7 +9,7 @@
 #else
 #define RANAS_API __declspec(dllimport)
 #endif
-
+/*
 #define PERROR(a) \
     {             \
         LPVOID lpMsgBuf;                                         \
@@ -21,7 +21,19 @@
                    (LPTSTR) &lpMsgBuf,0,NULL );                  \
         fprintf(stderr,"%s:(%d)%s\n",a,GetLastError(),lpMsgBuf); \
         LocalFree( lpMsgBuf );                                   \
-    }    
+} \   
+*/      
+void PERROR(char const *a) {
+    LPVOID lpMsgBuf;
+    FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                FORMAT_MESSAGE_FROM_SYSTEM |
+                FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                GetLastError(),
+                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                (LPTSTR) &lpMsgBuf,0,NULL);
+    fprintf(stderr,"%s:(%d)%s\n",a,GetLastError(),(char*)lpMsgBuf);
+    LocalFree(lpMsgBuf);
+}
 
 #define DERECHA		0
 #define IZQUIERDA	1
