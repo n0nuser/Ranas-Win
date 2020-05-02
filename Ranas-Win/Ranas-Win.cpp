@@ -57,13 +57,13 @@ unsigned int contador = 0;
 int main(int argc, char* argv[])
 {
 	system("mode con:cols=80 lines=25"); //FIJA AUTOMÁTICAMENTE A 80x25
-
+	/*
 	//PRIORIDAD DEL PROCESO NORMAL --> IDLE
 	if (!SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS)) {
 		PERROR("SetPriorityClass");
 		return 1;
 	}
-
+	*/
 	/*
 	HANDLE hilo1, hilo2;
 	CHAR char1, char2;
@@ -88,7 +88,14 @@ int main(int argc, char* argv[])
 	}
 
 	for (i = 0; i < 4; i++) {
-		funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar(i));
+
+
+
+		funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
+	
+	
+	
+	
 	}
 
 	//Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
@@ -107,7 +114,11 @@ void f_criar (int pos) {
 	int nose = 0;
 	//Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
 	pos = 0;
-	funciones.partoRanas(pos);
+	if (TRUE == funciones.partoRanas(pos)) {
+		nacidas++;
+	} else {
+		printf("Ha ocurrido un error en el parto de las ranas.\n");
+	}
 	funciones.comprobarEstadisticas(nacidas, salvadas, perdidas);
 	FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
 	return;
