@@ -3,13 +3,17 @@
 #include <Windows.h>
 #include <iostream>
 #include "ranas.h"
+#include <time.h>
+
+typedef BOOL DESTINO, *PDESTINO;
+typedef HANDLE TRONCOS, *PTRONCOS, ORILLA, *PORILLA;
 
 #define HOR_MIN 0
 #define HOR_MAX 79
 #define VER_MIN 0
+#define VER_MAX 11 //Orilla
 #define ORILLA_MIN 0
 #define ORILLA_MAX 3
-#define VER_MAX 11 //Orilla
 #define MSG_ERROR "GetProcAddress FERROR."
 #define THREAD_MAX 10000
 
@@ -45,13 +49,16 @@ void tratarArg(int argc, char* argv[]);
 int cargarRanas();
 void f_criar(int pos);
 DWORD WINAPI moverRanas(LPVOID lpParam);
-void avanzarRana(int* posX, int* posY, int dir);
+void avanzarRana(int *posX, int *posY, int dir);
 
 
 //VAR GLOBALES
 long nacidas = 0, salvadas = 0, perdidas = 0;
-int *posX = NULL, *posY = NULL;
-unsigned int contador = 0;
+int *posX, *posY, nMadre = 0;
+PTRONCOS troncos[7];
+PORILLA orilla[4];
+PBOOL destino; //Orilla[11];
+
 
 //MAIN Comentario
 int main(int argc, char* argv[])
@@ -71,34 +78,43 @@ int main(int argc, char* argv[])
 	INT i, reps;
 	*/
 	int velocidad, parto;
-	int lTroncos[] = {1,1,1,1,1,1,1};
-	int lAguas[] = {1,1,1,1,1,1,1};
-	int dirs[] = {1,1,1,1,1,1,1};
-	int i;
+	int lTroncos[] = { 4,5,4,5,4,5,4 };
+	int lAguas[] = { 5,4,3,5,3,4,5 };
+	int dirs[] = { 1,0,1,0,1,0,1 };
+	int i,j;
 
 	//TRATAMIENTO ARGUMENTOS
 	tratarArg(argc, argv);
 	velocidad = atoi(argv[1]);
 	parto = atoi(argv[2]);
 
+	posX = (PINT) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(posX));
+	posY = (PINT) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(posY));
 
 	if (cargarRanas() == -1) {
 		PERROR("ERROR al cargar la biblioteca ranas.");
 		exit(2);
 	}
-
-	for (i = 0; i < 4; i++) {
-
-
-
-		funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
-	
-	
-	
-	
+	/*
+	//ORILLA
+	for (i = ORILLA_MIN; i <= ORILLA_MAX; i++) {
+		FERROR(orilla[i] = (PORILLA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ORILLA) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
+		for (j = 0; j < HOR_MAX; j++) {
+			FERROR(troncos[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
+		}
 	}
 
-	//Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
+	//TRONCOS
+	for (i = 0; i <= 7; i++) {
+		FERROR(troncos[i] = (PTRONCOS)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TRONCOS) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
+		for (j = 0; j < HOR_MAX; j++) {
+			FERROR(troncos[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
+		}
+	}
+	*/
+	funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
+	
+	Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
 
 	funciones.finRanas();
 
@@ -110,30 +126,33 @@ int main(int argc, char* argv[])
 }
 
 // Funcion f_criar
-void f_criar (int pos) {
-	int nose = 0;
-	//Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
-	pos = 0;
-	if (TRUE == funciones.partoRanas(pos)) {
+void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
+	if (funciones.partoRanas(pos)) {
 		nacidas++;
+		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
+		*posX = (15 + (16 * pos));
+		*posY = 0;
+		srand(time(NULL));
 	} else {
+		Sleep(5000);
 		printf("Ha ocurrido un error en el parto de las ranas.\n");
+		exit(777);
 	}
-	funciones.comprobarEstadisticas(nacidas, salvadas, perdidas);
-	FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
-	return;
 }
 
 DWORD WINAPI moverRanas(LPVOID lpParam) {
-	int sentido;
+	int sentido = ARRIBA;
+	for(;;){
 	if(funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
 	else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
 	else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
 	//Inicio memoria compartida
+	//REVISAR CONDICIONES AVANCE RANA
 	funciones.avanceRanaIni(*posX, *posY);
 	funciones.avanceRana(posX, posY, sentido); //Produce el movimiento. Dejan la posición de después
 	funciones.avanceRanaFin(*posX, *posY);
 	//Fin memoria compartida
+	}
 	return 0;
 }
 
