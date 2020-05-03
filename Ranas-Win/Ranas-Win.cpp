@@ -14,6 +14,8 @@ typedef HANDLE TRONCOS, *PTRONCOS, ORILLA, *PORILLA;
 #define VER_MAX 11 //Orilla
 #define ORILLA_MIN 0
 #define ORILLA_MAX 3
+#define TRONCOS_MIN 4
+#define TRONCOS_MAX 10
 #define MSG_ERROR "GetProcAddress FERROR."
 #define THREAD_MAX 10000
 
@@ -55,8 +57,8 @@ void avanzarRana(int *posX, int *posY, int dir);
 //VAR GLOBALES
 long nacidas = 0, salvadas = 0, perdidas = 0;
 int *posX, *posY, nMadre = 0;
-PTRONCOS troncos[7];
-PORILLA orilla[4];
+PTRONCOS troncos[7]; //Troncos 4-10
+PORILLA orilla[3]; //Orilla 0-2
 PBOOL destino; //Orilla[11];
 
 
@@ -95,23 +97,23 @@ int main(int argc, char* argv[])
 		PERROR("ERROR al cargar la biblioteca ranas.");
 		exit(2);
 	}
-	/*
+	
 	//ORILLA
 	for (i = ORILLA_MIN; i <= ORILLA_MAX; i++) {
-		FERROR(orilla[i] = (PORILLA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ORILLA) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
+		FERROR(orilla[i] = (PORILLA) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ORILLA) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
 		for (j = 0; j < HOR_MAX; j++) {
-			FERROR(troncos[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
+			FERROR(orilla[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
 		}
 	}
 
 	//TRONCOS
-	for (i = 0; i <= 7; i++) {
-		FERROR(troncos[i] = (PTRONCOS)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TRONCOS) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
+	for (i = (TRONCOS_MIN-3); i <= (TRONCOS_MAX-3); i++) {
+		FERROR(troncos[i] = (PTRONCOS) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TRONCOS) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
 		for (j = 0; j < HOR_MAX; j++) {
 			FERROR(troncos[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
 		}
 	}
-	*/
+	
 	funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
 	
 	Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
@@ -119,6 +121,7 @@ int main(int argc, char* argv[])
 	funciones.finRanas();
 
 	//Acabar con hilos de ranas
+	//waitformultipleobjects
 
 	funciones.comprobarEstadisticas(nacidas, salvadas, perdidas);
 	
@@ -129,9 +132,9 @@ int main(int argc, char* argv[])
 void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
 	if (funciones.partoRanas(pos)) {
 		nacidas++;
-		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
 		*posX = (15 + (16 * pos));
 		*posY = 0;
+		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
 		srand(time(NULL));
 	} else {
 		Sleep(5000);
@@ -140,18 +143,40 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 	}
 }
 
-DWORD WINAPI moverRanas(LPVOID lpParam) {
-	int sentido = ARRIBA;
-	for(;;){
-	if(funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
-	else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
-	else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
-	//Inicio memoria compartida
-	//REVISAR CONDICIONES AVANCE RANA
-	funciones.avanceRanaIni(*posX, *posY);
-	funciones.avanceRana(posX, posY, sentido); //Produce el movimiento. Dejan la posición de después
-	funciones.avanceRanaFin(*posX, *posY);
-	//Fin memoria compartida
+DWORD WINAPI moverRanas(LPVOID lpParam) { //COMPROBAR POSICIONES, SE ADELANTA 
+	int sentido;
+	for (;;) {
+		//RESERVA MEMORIA COMPARTIDA
+		if ((*posX) < 0 || (*posX) > 79){
+			//CERRAR MEMORIA COMPARTIDA
+			perdidas++;
+			(*posY) = -1;
+			(*posX) = -1;
+		}
+	
+		if(funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
+		else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
+		else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
+		else {
+			//CERRAR MEMORIA COMPARTIDA
+			//funciones.pausa();
+			continue;
+		}
+		
+		//REVISAR CONDICIONES AVANCE RANA
+		funciones.avanceRanaIni(*posX, *posY);
+		funciones.avanceRana(posX, posY, sentido); //Produce el movimiento. Dejan la posición de después
+		funciones.avanceRanaFin(*posX, *posY);
+
+		if ((*posY) == 11) {
+			//CERRAR MEMORIA COMPARTIDA
+			salvadas++;
+			(*posX) = -1;
+			(*posY) = -1;
+			break; //NO QUITARLO!!
+		}
+
+		//CERRAR MEMORIA COMPARTIDA
 	}
 	return 0;
 }
