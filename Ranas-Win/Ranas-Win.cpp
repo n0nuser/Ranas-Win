@@ -57,10 +57,9 @@ void avanzarRana(int *posX, int *posY, int dir);
 //VAR GLOBALES
 long nacidas = 0, salvadas = 0, perdidas = 0;
 int *posX, *posY, nMadre = 0;
-PTRONCOS troncos[7]; //Troncos 4-10
-PORILLA orilla[3]; //Orilla 0-2
-PBOOL destino; //Orilla[11];
 
+//MUTEXES
+HANDLE ranasMutex;
 
 //MAIN Comentario
 int main(int argc, char* argv[])
@@ -83,7 +82,7 @@ int main(int argc, char* argv[])
 	int lTroncos[] = { 4,5,4,5,4,5,4 };
 	int lAguas[] = { 5,4,3,5,3,4,5 };
 	int dirs[] = { 1,0,1,0,1,0,1 };
-	int i,j;
+	int i;
 
 	//TRATAMIENTO ARGUMENTOS
 	tratarArg(argc, argv);
@@ -97,23 +96,9 @@ int main(int argc, char* argv[])
 		PERROR("ERROR al cargar la biblioteca ranas.");
 		exit(2);
 	}
-	
-	//ORILLA
-	for (i = ORILLA_MIN; i <= ORILLA_MAX; i++) {
-		FERROR(orilla[i] = (PORILLA) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ORILLA) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
-		for (j = 0; j < HOR_MAX; j++) {
-			FERROR(orilla[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
-		}
-	}
 
-	//TRONCOS
-	for (i = (TRONCOS_MIN-3); i <= (TRONCOS_MAX-3); i++) {
-		FERROR(troncos[i] = (PTRONCOS) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TRONCOS) * HOR_MAX), NULL, "HeapAlloc() ERROR\n");
-		for (j = 0; j < HOR_MAX; j++) {
-			FERROR(troncos[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex() ERROR\n");
-		}
-	}
-	
+	FERROR(ranasMutex = CreateMutex(NULL, FALSE, NULL),NULL, "CreateMutex() ERROR.\n");
+
 	funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
 	
 	Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
@@ -121,7 +106,9 @@ int main(int argc, char* argv[])
 	funciones.finRanas();
 
 	//Acabar con hilos de ranas
-	//waitformultipleobjects
+	WaitForMultipleObjects(THREAD_MAX, hilos, TRUE, INFINITE);
+	for (i = 0; i < THREAD_MAX; i++) CloseHandle(hilos[i]);
+	CloseHandle(ranasMutex);
 
 	funciones.comprobarEstadisticas(nacidas, salvadas, perdidas);
 	
@@ -130,12 +117,12 @@ int main(int argc, char* argv[])
 
 // Funcion f_criar
 void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas y crea un nuevo hilo para mover a la recién nacida.
+	//pos = 0;
 	if (funciones.partoRanas(pos)) {
 		nacidas++;
 		*posX = (15 + (16 * pos));
 		*posY = 0;
 		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
-		srand(time(NULL));
 	} else {
 		Sleep(5000);
 		printf("Ha ocurrido un error en el parto de las ranas.\n");
@@ -143,42 +130,67 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 	}
 }
 
-DWORD WINAPI moverRanas(LPVOID lpParam) { //COMPROBAR POSICIONES, SE ADELANTA 
-	int sentido;
-	for (;;) {
-		//RESERVA MEMORIA COMPARTIDA
-		if ((*posX) < 0 || (*posX) > 79){
-			//CERRAR MEMORIA COMPARTIDA
-			perdidas++;
-			(*posY) = -1;
-			(*posX) = -1;
-		}
-	
-		if(funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
-		else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
-		else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
-		else {
-			//CERRAR MEMORIA COMPARTIDA
-			//funciones.pausa();
-			continue;
-		}
-		
-		//REVISAR CONDICIONES AVANCE RANA
-		funciones.avanceRanaIni(*posX, *posY);
-		funciones.avanceRana(posX, posY, sentido); //Produce el movimiento. Dejan la posición de después
-		funciones.avanceRanaFin(*posX, *posY);
 
-		if ((*posY) == 11) {
-			//CERRAR MEMORIA COMPARTIDA
-			salvadas++;
-			(*posX) = -1;
-			(*posY) = -1;
-			break; //NO QUITARLO!!
-		}
+//CAMBIAR TODO POR LO DE BATRACIOS (354 ~)
+DWORD WINAPI moverRanas(LPVOID lpParam) {
+	int sentido = ARRIBA;
+	DWORD dwWaitResult;
+	for(;;) {
+		dwWaitResult = WaitForSingleObject(ranasMutex, INFINITE);
 
-		//CERRAR MEMORIA COMPARTIDA
+		switch (dwWaitResult){
+		case WAIT_OBJECT_0:
+			__try {
+				//RESERVA MEMORIA COMPARTIDA
+				if ((*posX) < 0 || (*posX) > 79) {
+					//CERRAR MEMORIA COMPARTIDA
+					perdidas++;
+					(*posY) = -1;
+					(*posX) = -1;
+				}
+
+				if (funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
+				else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
+				else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
+				else {
+					//CERRAR MEMORIA COMPARTIDA
+					funciones.pausa();
+					printf("No puedo saltar");
+					//continue;
+				}
+
+				//REVISAR CONDICIONES AVANCE RANA
+				funciones.avanceRanaIni(*posX, *posY);
+				funciones.avanceRana(posX, posY, sentido); //Produce el movimiento. Dejan la posición de después
+				funciones.avanceRanaFin(*posX, *posY);
+				
+				if (*posY == 11) {
+					salvadas++;
+					//(*posX) = -1;
+					//(*posY) = -1;
+					break;
+				}
+			}
+			__finally {
+				FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+				salvadas++;
+				//(*posX) = -1;
+				//(*posY) = -1;
+			}
+
+			/*if ((*posY) == 11) {
+				//CERRAR MEMORIA COMPARTIDA
+				salvadas++;
+				(*posX) = -1;
+				(*posY) = -1;
+				break; //NO QUITARLO!!
+			}*/
+			//CERRAR MEMORIA COMPARTIDA
+		case WAIT_ABANDONED:
+			return FALSE;
+		}
 	}
-	return 0;
+	return TRUE;
 }
 
 /* ============= Función para tratar argumentos ============= */
