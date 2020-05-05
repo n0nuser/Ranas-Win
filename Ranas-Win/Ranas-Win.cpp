@@ -63,8 +63,9 @@ void avanzarRana(int *posX, int *posY, int dir);
 
 //VAR GLOBALES
 long * nacidas, * salvadas, * perdidas;
-int *posX, *posY, nMadre = 0;
+int nMadre = 0;
 int noTerminado = 1;
+int posicion;
 //Memoria Compartida
 //Semáforos
 
@@ -72,7 +73,7 @@ int noTerminado = 1;
 HANDLE hilos[THREAD_MAX];
 DWORD hilosID;
 
-//MUTEXES
+//MUTEXES DEBUG
 HANDLE ranasMutex;
 
 //MAIN Comentario
@@ -88,7 +89,7 @@ int main(int argc, char* argv[])
 	int lTroncos[] = { 4,5,4,5,4,5,4 };
 	int lAguas[] = { 5,4,3,5,3,4,5 };
 	int dirs[] = { 1,0,1,0,1,0,1 };
-	int i;
+	int i,* posX, * posY;
 	
 	//int nRana, nProcesos, nTroncos, param1, param2;
 	int * movX, * movY; //Probar a quitar el global
@@ -115,7 +116,7 @@ int main(int argc, char* argv[])
 	perdidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(perdidas) * 8);
 	*nacidas = *salvadas = *perdidas = 0;
 
-	//CREACIÓN RECURSOS
+	//CREACIÓN RECURSOS DEBUG
 	FERROR(ranasMutex = CreateMutex(NULL, FALSE, NULL),NULL, "CreateMutex() ERROR.\n");
 
 	funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar);
@@ -136,16 +137,20 @@ int main(int argc, char* argv[])
 
 // Funcion f_criar
 void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas, crea un nuevo hilo para mover a la recién nacida y mueve los troncos
-	//pos = 0;
+	
+	//pos = 0; //DEBUG (PARA QUE SOLO PARA LA RANA MADRE 0)
+	int* movX, *movY;
+	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX) * 8);
+	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY) * 8 + 4); //Posiblemente quitar parametros 
+	
 	if (funciones.partoRanas(pos)) {
 		nacidas++;
-		*posX = (15 + (16 * pos));
-		*posY = 0;
+		posicion = pos;
 		//ABRIR SEMÁFORO CONTROL DE HILOS
 		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "THREAD_CREATION ERROR");
 	} else {
 		Sleep(5000);
-		printf("Ha ocurrido un error en el parto de las ranas.\n");
+		printf("\nHa ocurrido un error en el parto de las ranas.\n");
 		exit(777);
 	}
 	/*
@@ -173,91 +178,99 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 	*/
 }
 
-
-//CAMBIAR TODO POR LO DE BATRACIOS (354 ~)
 DWORD WINAPI moverRanas(LPVOID lpParam) {
 	int sentido;
-	int* movX;
-	int* movY;
+	int * movX, * movY;
 	int nacimiento = 0;
+	DWORD mem1, mem2;
+
 
 	//PUNTERO MEMORIA COMPARTIDA A CERO
+	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX) * 8);
+	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY) * 8 + 4); //Posiblemente quitar parametros
+
+	*movX = 15 + 16 * posicion;
+	*movY = 0;
 
 	while (noTerminado) //Poner los noterminado=0
 	{
-		//ABRIR MEMORIA COMPARTIDA
+		mem1 = WaitForSingleObject(ranasMutex, INFINITE); //DEBUG
+		switch (mem1) {
+			case WAIT_OBJECT_0:
+					//INICIALIZAR PUNTEROS POSX POSY
+					if ((*movX) < 0 || (*movX) > 79){
+						FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
 
-		//INICIALIZAR PUNTEROS POSX POSY
+						(*perdidas)++;
+						(*movY) = -1;
+						(*movX) = -1;
+						break;
+					}
+					
+					if (funciones.puedoSaltar(*movX, *movY, ARRIBA)) sentido = ARRIBA;
+					else if (funciones.puedoSaltar(*movX, *movY, DERECHA)) sentido = DERECHA;
+					else if (funciones.puedoSaltar(*movX, *movY, IZQUIERDA)) sentido = IZQUIERDA;
+					else {
+						FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+						funciones.pausa();
+						//printf("No puedo saltar");
+						continue;
+					}
 
-		if ((*movX) < 0 || (*movX) > 79)
-		{
-			//CERRAR MEMORIA COMPARTIDA
+					//METER LOS FERROR
+					FERROR(funciones.avanceRanaIni(*movX, *movY),FALSE,"avanceRanaIni() ERROR.\n");
+					FERROR(funciones.avanceRana(movX, movY, sentido), FALSE, "avanceRana() ERROR.\n");
 
-			(*perdidas)++;
-			(*movY) = -1;
-			(*movX) = -1;
-			break;
+					FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+
+					funciones.pausa();
+
+					mem2 = WaitForSingleObject(ranasMutex, INFINITE);
+					switch (mem2) {
+						case WAIT_OBJECT_0:
+							
+							//INICIAR PUNTEROS MOVX MOVY
+
+							if ((*movX) < 0 || (*movX) > 79)
+							{
+								FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+
+								(*perdidas)++;
+								(*movY) = -1;
+								(*movX) = -1;
+								break;
+							}
+
+							FERROR(funciones.avanceRanaFin(*movX, *movY), FALSE, "avanceRanaFin() ERROR.\n");
+
+
+							if ((*movY) == 11) {
+								FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+								(*salvadas)++;
+								(*movY) = -1;
+								(*movX) = -1;
+								break;
+							}
+							/*
+							if ((*movY) == 1 && nacimiento == 0)
+							{
+								nacimiento = 1;
+								sems.sem_num = nRana + 2;
+								sems.sem_op = 1;
+								sems.sem_flg = 0;
+								if (semop(sem, &sems, 1) == -1) perror("\033[1;31mError semáforo de control de nacimiento de ranaMadre.\033[0m\n");
+							}
+							*/
+							FERROR(ReleaseMutex(ranasMutex), FALSE, "ReleaseMutex() ERROR.\n");
+						case WAIT_ABANDONED:
+							return FALSE;
+					}
+			case WAIT_ABANDONED:
+				return FALSE;
 		}
-
-		if (funciones.puedoSaltar(*posX, *posY, ARRIBA)) sentido = ARRIBA;
-		else if (funciones.puedoSaltar(*posX, *posY, DERECHA)) sentido = DERECHA;
-		else if (funciones.puedoSaltar(*posX, *posY, IZQUIERDA)) sentido = IZQUIERDA;
-		else {
-			//CERRAR MEMORIA COMPARTIDA
-			funciones.pausa();
-			printf("No puedo saltar");
-			continue;
-		}
-
-		//METER LOS FERROR
-		funciones.avanceRanaIni(*posX, *posY);
-		funciones.avanceRana(posX, posY, sentido);
-
-		//CERRAR MEMORIA COMPARTIDA
-
-		funciones.pausa();
-
-		//ABRIR MEMORIA COMPARTIDA
-
-
-		//INICIAR PUNTEROS MOVX MOVY
-
-		if ((*movX) < 0 || (*movX) > 79)
-		{
-			//CERRAR MEMORIA COMPARTIDA
-
-			(*perdidas)++;
-			(*movY) = -1;
-			(*movX) = -1;
-			break;
-		}
-
-		funciones.avanceRanaFin(*posX, *posY);
-
-
-		if ((*movY) == 11) {
-			//CERRAR MEMORIA COMPARTIDA
-			(*salvadas)++;
-			(*movY) = -1;
-			(*movX) = -1;
-			break;
-		}
-		/*
-		if ((*movY) == 1 && nacimiento == 0)
-		{
-			nacimiento = 1;
-			sems.sem_num = nRana + 2;
-			sems.sem_op = 1;
-			sems.sem_flg = 0;
-			if (semop(sem, &sems, 1) == -1) perror("\033[1;31mError semáforo de control de nacimiento de ranaMadre.\033[0m\n");
-		}
-		*/
-		//CERRAR MEMORIA COMPARTIDA
 	}
-
 	//CERRAR SEMÁFORO CONTROL DE HILOS
-
-	exit(0);
+	return TRUE;
 }
 
 /* ============= Función para tratar argumentos ============= */
