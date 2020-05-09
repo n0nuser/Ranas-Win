@@ -33,7 +33,6 @@ typedef HANDLE TRONCOS, *PTRONCOS, ORILLA, *PORILLA;
     }while(0)
 
 
-
 struct funcionesDLL {
 	HINSTANCE ranasDLL;
 	TIPO_AVANCERANA avanceRana;
@@ -55,17 +54,18 @@ void tratarArg(int argc, char* argv[]);
 int cargarRanas();
 void f_criar(int pos);
 DWORD WINAPI moverRanas(LPVOID lpParam);
-void avanzarRana(int *posX, int *posY, int dir);
 
 
 //VAR GLOBALES
-long * nacidas, * salvadas, * perdidas;
+PLONG nacidas, salvadas, perdidas;
 int posicion; //Se utiliza para pasarle "pos" a los movXY de moverRanas desde f_criar
 
-//MUTEXES DEBUG
-HANDLE ranasMutex[80][12];
+//MUTEXES
+typedef HANDLE ranasMutex, *pRanasMutex;
+pRanasMutex mu[80];
 
-//MAIN Comentario
+/* ======================================= MAIN ======================================= */
+
 int main(int argc, char* argv[])
 {
 	system("mode con:cols=80 lines=25"); //FIJA AUTOMÁTICAMENTE A 80x25
@@ -85,19 +85,25 @@ int main(int argc, char* argv[])
 	velocidad = atoi(argv[1]);
 	parto = atoi(argv[2]);
 
+	//CARGA DE LAS FUNCIONES DE BIBLIOTECA
 	FERROR(cargarRanas(),-1,"cargarRanas()\n");
 
 	//INICIALIZACIÓN MEMORIA
-	nacidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(nacidas) * 8);
-	salvadas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(salvadas) * 8);
-	perdidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(perdidas) * 8);
+	nacidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(nacidas));
+	salvadas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(salvadas));
+	perdidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(perdidas));
 	*nacidas = *salvadas = *perdidas = 0;
 
 	//CREACIÓN RECURSOS DEBUG
 	for (i = HOR_MIN; i <= HOR_MAX; i++)
-		for (j = VER_MIN; j <= VER_MAX; j++)
-			FERROR(ranasMutex[i][j] = CreateMutex(NULL, FALSE, NULL),NULL, "CreateMutex()\n");
+		FERROR(mu[i] = (pRanasMutex)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(ranasMutex) * VER_MAX), NULL, "HeapAlloc()\n");
 
+	for (i = HOR_MIN; i <= HOR_MAX; i++)
+		for (j = VER_MIN; j <= VER_MAX; j++)
+			FERROR(mu[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
+
+	
+	//INICIO DEL PROGRAMA
 	FERROR(funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, f_criar),FALSE,"inicioRanas()\n");
 
 	Sleep(30000); // Se debe esperar 30 segundos para finalizar el programa
@@ -105,7 +111,7 @@ int main(int argc, char* argv[])
 	FERROR(funciones.finRanas(),NULL,"finRanas()\n");
 	for (i = HOR_MIN; i <= HOR_MAX; i++)
 		for (j = VER_MIN; j <= VER_MAX; j++)
-			FERROR(CloseHandle(ranasMutex),NULL,"CloseHandle()\n");
+			FERROR(CloseHandle(mu),NULL,"CloseHandle()\n");
 
 	FERROR(funciones.comprobarEstadisticas(*nacidas, *salvadas, *perdidas),NULL,"comprobarEstadisticas()\n");
 
@@ -117,16 +123,18 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 
 	//pos = 0; //DEBUG (PARA QUE SOLO PARA LA RANA MADRE 0)
 
-	//Para los troncos
-	//int* movX, *movY;
-	//movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX) * 8);
-	//movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY) * 8 + 4); //Posiblemente quitar parametros
-
+	/*//Para los troncos
+	int* movX, *movY;
+	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX));
+	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY)); //Posiblemente quitar parametros
+	*/
+	
 	//wait antes del parto y luego comprobar si hay rana
 	if (funciones.partoRanas(pos)) {
 		nacidas++;
 		posicion = pos;
 		//ABRIR SEMÁFORO CONTROL DE HILOS
+		
 		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "CreateThread()\n");
 	} else {
 		printf("partoRanas()\n");
@@ -141,8 +149,8 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 
 		for (nProcesos = 0; nProcesos < 25; nProcesos++)
 		{
-			movX = (int*)(ptr + 2048 + nProcesos * 8);
-			movY = (int*)(ptr + 2048 + nProcesos * 8 + 4);
+			movX = (int*)(ptr + 2048 + nProcesos);
+			movY = (int*)(ptr + 2048 + nProcesos);
 
 			if ((*movY) == 10 - nTroncos) {
 				if (dirs[nTroncos] == 0)
@@ -161,24 +169,27 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 DWORD WINAPI moverRanas(LPVOID lpParam) {
 	int sentido;
 	int * movX, * movY;
-	DWORD mem1, mem2;
-
+	DWORD mem1;// , mem2;
 
 	//PUNTERO MEMORIA COMPARTIDA A CERO
 	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX));
 	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY)); //Posiblemente quitar parametros
-
-	*movX = 15 + 16 * posicion;
+	
+	*movX = (15 + 16 * posicion);
 	*movY = 0;
 
-	while (TRUE) //SIN SINCRONIZACIÓN SE MUEVE
+	while (TRUE)
 	{
-		mem1 = WaitForSingleObject(ranasMutex[*movX][*movY], INFINITE); //DEBUG
+		mem1 = WaitForSingleObject(mu[*movX][*movY], INFINITE); //DEBUG
 		switch (mem1) {
+			// The thread got the mutex ownership...
 			case WAIT_OBJECT_0:
+			{
+				// A simple structured exception handling (SEH)...
+				__try {
 					//INICIALIZAR PUNTEROS POSX POSY
-					if ((*movX) < 0 || (*movX) > 79){
-						FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n");
+					if ((*movX) < 0 || (*movX) > 79) {
+						FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
 						(*perdidas)++;
 						(*movY) = -1;
 						(*movX) = -1;
@@ -189,63 +200,95 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 					else if (funciones.puedoSaltar(*movX, *movY, DERECHA)) sentido = DERECHA;
 					else if (funciones.puedoSaltar(*movX, *movY, IZQUIERDA)) sentido = IZQUIERDA;
 					else {
-						FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n");
+						FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
 						funciones.pausa();
 						//printf("No puedo saltar");
 						continue;
 					}
 
-					FERROR(funciones.avanceRanaIni(*movX, *movY),FALSE,"avanceRanaIni()\n");
+					FERROR(funciones.avanceRanaIni(*movX, *movY), FALSE, "avanceRanaIni()\n");
 					FERROR(funciones.avanceRana(movX, movY, sentido), FALSE, "avanceRana()\n");
-
-					FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n");
-
-					funciones.pausa();
-
-					mem2 = WaitForSingleObject(ranasMutex[*movX][*movY], INFINITE);
-					switch (mem2) {
-						case WAIT_OBJECT_0:
-
-							//INICIAR PUNTEROS MOVX MOVY
-
-							if ((*movX) < 0 || (*movX) > 79){
-								FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n");
-								(*perdidas)++;
-								(*movY) = -1;
-								(*movX) = -1;
-								break;
-							}
-
-							FERROR(funciones.avanceRanaFin(*movX, *movY), FALSE, "avanceRanaFin()\n");
-
-							if ((*movY) == 11) {
-								FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n");
-								(*salvadas)++;
-								(*movY) = -1;
-								(*movX) = -1;
-								break;
-							}
-							/* //Lo teníamos en Batracios, controla el parto de cada madre
-							   //pero como inicioRanas hace eso lo mismo sobra
-							if ((*movY) == 1 && nacimiento == 0)
-							{
-								nacimiento = 1;
-								sems.sem_num = nRana + 2;
-								sems.sem_op = 1;
-								sems.sem_flg = 0;
-								if (semop(sem, &sems, 1) == -1) perror("\033[1;31mError semáforo de control de nacimiento de ranaMadre.\033[0m\n");
-							}
-							*/
-							FERROR(ReleaseMutex(ranasMutex[*movX][*movY]), FALSE, "ReleaseMutex()\n"); //Revisar esto a ver si da problemas
-						case WAIT_ABANDONED:
-							return FALSE;
-					}
-			case WAIT_ABANDONED:
+				}
+				__finally {
+					// Release the ownership of the mutex object.
+					if (!ReleaseMutex(mu[*movX][*movY])) funciones.pausa();
+				}
+			}
+			// Cannot get the mutex ownership due to time-out.
+			case WAIT_TIMEOUT:
+			{
+				printf("Time-out interval elapsed, and the object's state is signaled (not owned).\n");
+				printf("Cannot get the mutex ownership\n\n");
 				return FALSE;
+			}
+			// Got the ownership of the abandoned mutex object.
+			case WAIT_ABANDONED:
+			{
+				printf("The mutex is set to non-signaled (owned).\n");
+				printf("Got the mutex...\n");
+				return FALSE;
+			}
+		}		
+
+		mem1 = WaitForSingleObject(mu[*movX][*movY], INFINITE);
+		switch (mem1) {
+			case WAIT_OBJECT_0:
+			{
+				__try {
+					//INICIAR PUNTEROS MOVX MOVY
+
+					if ((*movX) < 0 || (*movX) > 79) {
+						FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
+						(*perdidas)++;
+						(*movY) = -1;
+						(*movX) = -1;
+						break;
+					}
+
+					FERROR(funciones.avanceRanaFin(*movX, *movY), FALSE, "avanceRanaFin()\n");
+
+					if ((*movY) == 11) {
+						FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
+						(*salvadas)++;
+						(*movY) = -1;
+						(*movX) = -1;
+						break;
+					}
+					/* //Lo teníamos en Batracios, controla el parto de cada madre
+						//pero como inicioRanas hace eso lo mismo sobra
+					if ((*movY) == 1 && nacimiento == 0)
+					{
+						nacimiento = 1;
+						sems.sem_num = nRana + 2;
+						sems.sem_op = 1;
+						sems.sem_flg = 0;
+						if (semop(sem, &sems, 1) == -1) perror("\033[1;31mError semáforo de control de nacimiento de ranaMadre.\033[0m\n");
+					}
+					*/
+				}
+				__finally {
+					FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n"); //Revisar esto a ver si da problemas
+				}
+			}
+			// Cannot get the mutex ownership due to time-out.
+			case WAIT_TIMEOUT:
+			{
+				printf("Time-out interval elapsed, and the object's state is signaled (not owned).\n");
+				printf("Cannot get the mutex ownership\n\n");
+				return FALSE;
+			}
+			// Got the ownership of the abandoned mutex object.
+			case WAIT_ABANDONED:
+			{
+				printf("The mutex is set to non-signaled (owned).\n");
+				printf("Got the mutex...\n");
+				return FALSE;
+			}
 		}
-	}
+	}//while
 	//CERRAR SEMÁFORO CONTROL DE HILOS
 	return TRUE;
+
 }
 
 /* ============= Función para tratar argumentos ============= */
