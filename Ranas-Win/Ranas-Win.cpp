@@ -3,7 +3,7 @@
    Integrantes del grupo:	Pablo Jesús González Rubio - i0894492
 							Sergio García González - i0921911
    Fecha de modificación:
- */
+*/
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -110,7 +110,7 @@ int main(int argc, char* argv[])
 	FERROR(funciones.finRanas(),NULL,"finRanas()\n");
 	for (i = HOR_MIN; i <= HOR_MAX; i++)
 		for (j = VER_MIN; j <= VER_MAX; j++)
-			FERROR(CloseHandle(mu),NULL,"CloseHandle()\n");
+			FERROR(CloseHandle(mu[i][j]),NULL,"CloseHandle()\n");
 
 	FERROR(funciones.comprobarEstadisticas(*nacidas, *salvadas, *perdidas),NULL,"comprobarEstadisticas()\n");
 
@@ -119,50 +119,40 @@ int main(int argc, char* argv[])
 
 // Funcion f_criar
 void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas, crea un nuevo hilo para mover a la recién nacida y mueve los troncos
-
-	//pos = 0; //DEBUG (PARA QUE SOLO PARA LA RANA MADRE 0)
-
-	/*//Para los troncos
-	int* movX, *movY;
+	//Para los troncos
+	PINT movX, movY;
 	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX));
-	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY)); //Posiblemente quitar parametros
-	*/
+	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY));
+	int dirs[] = { 1,0,1,0,1,0,1 };
 	
 	//wait antes del parto y luego comprobar si hay rana
 	if (funciones.partoRanas(pos)) {
 		nacidas++;
 		posicion = pos;
 		//ABRIR SEMÁFORO CONTROL DE HILOS
-		
 		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "CreateThread()\n");
 	} else {
 		printf("partoRanas()\n");
 		exit(777);
 	}
 
-	/* //Esta es la funcion que utilizamos en batracios y la tenemos aqui solo como referencia
-	for (nTroncos = 0; nTroncos < 7; nTroncos++) {
-		//ABRIR MEMORIA COMPARTIDA
-
-		//AVANCE_TRONCOS
-
-		for (nProcesos = 0; nProcesos < 25; nProcesos++)
-		{
-			movX = (int*)(ptr + 2048 + nProcesos);
-			movY = (int*)(ptr + 2048 + nProcesos);
-
+	//Esta es la funcion que utilizamos en batracios y la tenemos aqui solo como referencia
+	for (int nTroncos = 0; nTroncos < 7; nTroncos++) {
+		FERROR(WaitForSingleObject(mu[*movX][*movY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
+		funciones.avanceTroncos(nTroncos);
+		//for (nProcesos = 0; nProcesos < 25; nProcesos++)
+		//{
 			if ((*movY) == 10 - nTroncos) {
-				if (dirs[nTroncos] == 0)
+				if (dirs[nTroncos])
 					(*movX)++;
 				else
 					(*movX)--;
 			}
-		}
-		//CIERRA MEMORIA COMPARTIDA
-
-		//BATR_PAUSA
+		//}
+		FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
+		funciones.pausa();
 	}
-	*/
+	
 }
 
 DWORD WINAPI moverRanas(LPVOID lpParam) {
@@ -181,13 +171,13 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 
 	while(TRUE) {
 		//FERROR(WaitForSingleObject(mu[*movX][*movY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
-		/*if ((*movX) < 0 || (*movX) > 79) {
-			FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
+		if ((*preX) < 0 || (*preX) > 79) {
+			FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 			(*perdidas)++;
-			(*movY) = -1;
-			(*movX) = -1;
+			(*preY) = -1;
+			(*preX) = -1;
 			break;
-		}*/
+		}
 
 		if (funciones.puedoSaltar(*preX, *preY, ARRIBA)) sentido = ARRIBA;
 		else if (funciones.puedoSaltar(*preX, *preY, DERECHA)) sentido = DERECHA;
@@ -204,12 +194,14 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 		funciones.avanceRana(preX, preY, sentido); //Produce el movimiento. Dejan la posición de después
 		FERROR(ReleaseMutex(mu[*posX][*posY]), 0, "ReleaseMutex()\n");
 		
-		*posX = *preX;
-		*posY = *preY;
+		//*posX = *preX; //Creemos que no
+		//*posY = *preY; //es necesario
 		FERROR(WaitForSingleObject(mu[*preX][*preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
 		funciones.avanceRanaFin(*preX, *preY);
-		FERROR(ReleaseMutex(mu[*posX][*posY]), 0, "ReleaseMutex()\n");
+		if (*preY == 11) (*salvadas)++;
+		FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 	}
+	
 	return 0;
 }
 
