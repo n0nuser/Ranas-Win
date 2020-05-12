@@ -58,6 +58,9 @@ DWORD WINAPI moverRanas(LPVOID lpParam);
 //VAR GLOBALES
 PLONG nacidas, salvadas, perdidas;
 int posicion; //Se utiliza para pasarle "pos" a los movXY de moverRanas desde f_criar
+int lTroncos[] = { 4,5,4,5,4,5,4 };
+int lAguas[] = { 5,4,3,5,3,4,5 };
+int dirs[] = { 1,1,1,1,1,1,1 };
 
 //MUTEXES
 typedef HANDLE ranasMutex, *pRanasMutex;
@@ -74,9 +77,6 @@ int main(int argc, char* argv[])
 	FERROR(SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS),FALSE,"SetPriorityClass");
 
 	int velocidad, parto;
-	int lTroncos[] = { 4,5,4,5,4,5,4 };
-	int lAguas[] = { 5,4,3,5,3,4,5 };
-	int dirs[] = { 1,0,1,0,1,0,1 };
 	int i, j;
 
 	//TRATAMIENTO ARGUMENTOS
@@ -118,12 +118,11 @@ int main(int argc, char* argv[])
 }
 
 // Funcion f_criar
-void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas, crea un nuevo hilo para mover a la recién nacida y mueve los troncos
+void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las estadísticas, crea un nuevo hilo para mover a la recién nacida y mueve los troncos	//Para los troncos	//Para los troncos
 	//Para los troncos
 	PINT movX, movY;
 	movX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movX));
 	movY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(movY));
-	int dirs[] = { 1,0,1,0,1,0,1 };
 	
 	//wait antes del parto y luego comprobar si hay rana
 	if (funciones.partoRanas(pos)) {
@@ -135,24 +134,20 @@ void f_criar (int pos) { //Llamará a la función PartoRanas, actualiza las esta
 		printf("partoRanas()\n");
 		exit(777);
 	}
-
 	//Esta es la funcion que utilizamos en batracios y la tenemos aqui solo como referencia
 	for (int nTroncos = 0; nTroncos < 7; nTroncos++) {
-		FERROR(WaitForSingleObject(mu[*movX][*movY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
+		//FERROR(WaitForSingleObject(mu[*movX][*movY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
 		funciones.avanceTroncos(nTroncos);
-		//for (nProcesos = 0; nProcesos < 25; nProcesos++)
-		//{
+		
 			if ((*movY) == 10 - nTroncos) {
 				if (dirs[nTroncos])
 					(*movX)++;
 				else
 					(*movX)--;
 			}
-		//}
-		FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
+		//FERROR(ReleaseMutex(mu[*movX][*movY]), 0, "ReleaseMutex()\n");
 		funciones.pausa();
 	}
-	
 }
 
 DWORD WINAPI moverRanas(LPVOID lpParam) {
@@ -162,9 +157,9 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 
 	//PUNTERO MEMORIA COMPARTIDA A CERO
 	preX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));
-	preY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT)); //Posiblemente quitar parametros	
+	preY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));	
 	posX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));
-	posY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT)); //Posiblemente quitar parametros
+	posY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));
 	*preX = (15 + 16 * posicion);
 	*preY = 0;
 	
@@ -183,8 +178,9 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 		else if (funciones.puedoSaltar(*preX, *preY, DERECHA)) sentido = DERECHA;
 		else if (funciones.puedoSaltar(*preX, *preY, IZQUIERDA)) sentido = IZQUIERDA;
 		else {
-			FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
+			//FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 			funciones.pausa();
+			continue;
 		}
 		
 		*posX = *preX;
@@ -194,14 +190,17 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 		funciones.avanceRana(preX, preY, sentido); //Produce el movimiento. Dejan la posición de después
 		FERROR(ReleaseMutex(mu[*posX][*posY]), 0, "ReleaseMutex()\n");
 		
-		//*posX = *preX; //Creemos que no
-		//*posY = *preY; //es necesario
 		FERROR(WaitForSingleObject(mu[*preX][*preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
 		funciones.avanceRanaFin(*preX, *preY);
-		if (*preY == 11) (*salvadas)++;
+		if (*preY == 11) {
+			(*salvadas)++;
+			//FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
+			(*preY) = -1;
+			(*preX) = -1;
+			break;
+		}
 		FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 	}
-	
 	return 0;
 }
 
