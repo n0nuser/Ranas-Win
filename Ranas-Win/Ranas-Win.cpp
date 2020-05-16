@@ -59,16 +59,16 @@ DWORD WINAPI moverRanas(LPVOID lpParam);
 PLONG nacidas, salvadas, perdidas;
 PINT pX, pY;
 int posicion; //Se utiliza para pasarle "pos" a los movXY de moverRanas desde f_criar
-int lTroncos[] = {4,5,4,5,4,5,4 };
+int lTroncos[] = {5,5,5,5,5,5,5 };
 int lAguas[] = {1,1,1,1,1,1,1};
 int dirs[] = { 1,1,1,1,1,1,1 };
-int cont, troncoMov; //Las utilizamos para pasarle el tronco que se mueve a la ranita y cont para la dirección
+int ini = 0, cont; //Las utilizamos para pasarle el tronco que se mueve a la ranita y cont para la dirección
 						//Por ahora la posición está bloqueada para que se mueva a la izquierda
 
 //MUTEXES
 typedef HANDLE ranasMutex, *pRanasMutex;
 ranasMutex mu[80][12];
-CRITICAL_SECTION sc;
+CRITICAL_SECTION sc, sc1;
 
 /* ======================================= MAIN ======================================= */
 
@@ -106,6 +106,7 @@ int main(int argc, char* argv[])
 			FERROR(mu[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
 
 	InitializeCriticalSection(&sc);
+	InitializeCriticalSection(&sc1);
 
 	//INICIO DEL PROGRAMA
 	FERROR(funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, criar),FALSE,"inicioRanas()\n");
@@ -118,7 +119,8 @@ int main(int argc, char* argv[])
 		for (j = VER_MIN; j <= VER_MAX; j++)
 			FERROR(CloseHandle(mu[i][j]),NULL,"CloseHandle()\n");
 	
-	DeleteCriticalSection(&sc);
+	DeleteCriticalSection(&sc);	
+	DeleteCriticalSection(&sc1);
 
 	FERROR(funciones.comprobarEstadisticas(*nacidas, *salvadas, *perdidas),NULL,"comprobarEstadisticas()\n");
 	
@@ -128,45 +130,45 @@ int main(int argc, char* argv[])
 void criar (int pos) {
 	//Para los troncos
 	int nTroncos; //Controla qué tronco se mueve
+
 	while (TRUE) {
 		if (funciones.partoRanas(pos)) {
 			nacidas++;
 			posicion = pos;
-			EnterCriticalSection(&sc);
 			FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "CreateThread()\n");
-			LeaveCriticalSection(&sc);
 		} else {
 			printf("partoRanas()\n");
 			exit(777);
 		}
-		nTroncos = rand() % 7;
-		funciones.avanceTroncos(nTroncos);
-		//Aquí habíamos probado a poner una sección crítica pero bloquea el movimiento de las ranas al estar en un while infinito.
-		//Sabemos que tenemos que pasarle a la rana el tronco que se mueve para que la ranita actualize su posición pero 
-		// no sabemos cómo sincronizarlo para que al moverse otro tronco no modifique el valor, o al moverse una rana no coja
-		// de otro tronco.
-		troncoMov = nTroncos;
+		if (ini) {
+			//nTroncos = rand() % 7;
+			for(nTroncos = 0; nTroncos < 7; nTroncos++){
+				funciones.avanceTroncos(nTroncos);
+				//Aquí habíamos probado a poner una sección crítica pero bloquea el movimiento de las ranas al estar en un while infinito.
+				//Sabemos que tenemos que pasarle a la rana el tronco que se mueve para que la ranita actualize su posición pero 
+				// no sabemos cómo sincronizarlo para que al moverse otro tronco no modifique el valor, o al moverse una rana no coja
+				// de otro tronco.
 
-		EnterCriticalSection(&sc);
-		cont = 0;
-		LeaveCriticalSection(&sc);
+				//EnterCriticalSection(&sc);
+				//cont = 0;
+				//LeaveCriticalSection(&sc);
 
-		
-		if (dirs[nTroncos]) { //Si troncos se mueven a la izquierda
-			EnterCriticalSection(&sc);
-			//cont = -1;
-			if ((*pY > 3 && *pY < 11) && ((*pY) == 10 - troncoMov))
-				(*pX)--;
-			LeaveCriticalSection(&sc);
+
+				if (dirs[nTroncos]) { //Si troncos se mueven a la izquierda
+					EnterCriticalSection(&sc1);
+					if ((*pY > 3 && *pY < 11) && ((*pY) == 10 - nTroncos))
+						(*pX)--;
+					LeaveCriticalSection(&sc1);
+				}
+				else {
+					EnterCriticalSection(&sc1);
+					if ((*pY > 3 && *pY < 11) && ((*pY) == 10 - nTroncos))
+						(*pX)++;
+					LeaveCriticalSection(&sc1);
+				}
+				funciones.pausa();
+			}
 		}
-		else {
-			EnterCriticalSection(&sc);
-			//cont = 1;
-			if ((*pY > 3 && *pY < 11) && ((*pY) == 10 - troncoMov))
-				(*pX)++;
-			LeaveCriticalSection(&sc);
-		}
-		funciones.pausa();
 	}
 }
 
@@ -188,25 +190,17 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 		pX = preX;
 		pY = preY;
 		LeaveCriticalSection(&sc);
-		//FERROR(WaitForSingleObject(mu[*movX][*movY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
-		if ((*preX) < 0 || (*preX) > 79) {
+		*posX = *preX;
+		*posY = *preY;
+		ini = 1;
+
+		if ((*preX) < 0 || (*pX) > 79) {
 			FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 			(*perdidas)++;
 			(*preY) = -1;
 			(*preX) = -1;
 			break;
 		}
-		/*
-		if ((*preY > 3 && *preY < 11) && ((*preY) == 10 - troncoMov)) {
-			//Aquí hemos puesto para que si la rana está en la sección de troncos y está encima del tronco que se mueve
-			// que modifique su posición X de acuerdo al movimiento de los troncos.
-			//FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
-			*preX += cont;
-			//Hemos pensado que quizá aquí necesitáramos mover la ranita, pero se queda pillado y no consigue mover la ranita.
-			// Quizá esto lo hagamos mal.
-		}
-		*/
-		//ACTUALIZA POSICIÓN
 		
 		if (funciones.puedoSaltar(*preX, *preY, ARRIBA)) sentido = ARRIBA;
 		else if (funciones.puedoSaltar(*preX, *preY, IZQUIERDA)) sentido = IZQUIERDA;
@@ -215,14 +209,10 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 			funciones.pausa();
 			continue;
 		}
-
-		*posX = *preX;
-		*posY = *preY;
 		FERROR(WaitForSingleObject(mu[*preX][*preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n"); //Reserva posición
 		funciones.avanceRanaIni(*preX, *preY);
 		funciones.avanceRana(preX, preY, sentido); //Produce el movimiento. Dejan la posición de después
 		FERROR(ReleaseMutex(mu[*posX][*posY]), 0, "ReleaseMutex()\n"); //Libera la posición reservada anteriormente
-
 		if ((*preX) < 0 || (*preX) > 79) {
 			FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
 			(*perdidas)++;
@@ -231,16 +221,8 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 			break;
 		}
 
-		//ACTUALIZA POSICIÓN
-		/*
-		if ((*preY > 3 && *preY < 11) && ((*preY) == 10 - troncoMov)) {
-			FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
-			*preX += cont;
-		}
-		*/
 		FERROR(WaitForSingleObject(mu[*preX][*preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n"); //Reserva posición a la que va a saltar
 		funciones.avanceRanaFin(*preX, *preY);
-
 		if (*preY == 11) {
 			(*salvadas)++;
 			//FERROR(ReleaseMutex(mu[*preX][*preY]), 0, "ReleaseMutex()\n");
