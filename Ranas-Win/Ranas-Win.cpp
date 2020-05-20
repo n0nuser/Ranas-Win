@@ -22,10 +22,9 @@ typedef HANDLE TRONCOS, * PTRONCOS, ORILLA, * PORILLA;
 #define ORILLA_MAX 3
 #define TRONCOS_MIN 4
 #define TRONCOS_MAX 10
-#define INF 1000000
 
 
-#define FERROR(ReturnValue,ErrorValue,ErrorMsg)							\
+#define FERROR(ReturnValue,ErrorValue,ErrorMsg)											\
     do{																					\
         if((ReturnValue) == (ErrorValue)){												\
             fprintf(stderr, "\n[%d:%s] FERROR: %s", __LINE__, __FUNCTION__,ErrorMsg);	\
@@ -58,18 +57,19 @@ DWORD WINAPI moverRanas(LPVOID lpParam);
 
 //VAR GLOBALES
 PLONG nacidas, salvadas, perdidas;
-PINT pX, pY;
+//PINT pX, pY;
 int posicion; //Se utiliza para pasarle "pos" a los movXY de moverRanas desde f_criar
 int lTroncos[] = { 5,5,5,5,5,5,5 };
 int lAguas[] = { 1,1,1,1,1,1,1 };
-int dirs[] = { 1,1,1,1,1,1,1 };
+int dirs[] = { 1,0,1,0,1,0,1 };
 int ini = 0, cont = 0;
+int ranasTroncos[12][80];
 
 HANDLE semaforo_troncos;
 
 //MUTEXES
 HANDLE mu[80][12], control;
-CRITICAL_SECTION sc;
+CRITICAL_SECTION sc,sc1;
 
 /* ======================================= MAIN ======================================= */
 
@@ -94,9 +94,7 @@ int main(int argc, char* argv[])
 	nacidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
 	salvadas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
 	perdidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
-	pX = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));
-	pY = (PINT)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PINT));
-	*nacidas = *salvadas = *perdidas = *pY = *pX = 0;
+	*nacidas = *salvadas = *perdidas = 0;
 
 	//MATRIZ 80x25 MUTEX
 	//DAR ESPACIO MEMORIA A HANDLE mu
@@ -108,10 +106,15 @@ int main(int argc, char* argv[])
 		for (j = VER_MIN; j <= VER_MAX; j++)
 			FERROR(mu[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
 
+	for (i = 0; i < 12; i++)
+		for (j = HOR_MIN; j < HOR_MAX; j++)
+			ranasTroncos[i][j] = 0;
+
 	FERROR(control = (HANDLE)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HANDLE)), NULL, "HeapAlloc()\n");
 	FERROR(control = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
 
 	InitializeCriticalSection(&sc);
+	InitializeCriticalSection(&sc1);
 
 	semaforo_troncos = CreateSemaphore(NULL, 0, 1, "semaforo_troncos");
 
@@ -127,6 +130,7 @@ int main(int argc, char* argv[])
 			FERROR(CloseHandle(mu[i][j]), NULL, "CloseHandle()\n");
 
 	DeleteCriticalSection(&sc);
+	DeleteCriticalSection(&sc1);
 
 
 	FERROR(funciones.comprobarEstadisticas(*nacidas, *salvadas, *perdidas), NULL, "comprobarEstadisticas()\n");
@@ -135,38 +139,36 @@ int main(int argc, char* argv[])
 }
 
 void criar(int pos) {
-	if (funciones.partoRanas(pos)) {
-		nacidas++;
-		posicion = pos;
-		FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "CreateThread()\n");
-	}
-	else {
-		printf("partoRanas()\n");
-		exit(777);
-	}
-	
+	int mov = 0;
 	while (TRUE) {
+		if (funciones.partoRanas(pos)) {
+			nacidas++;
+			posicion = pos;
+			FERROR(CreateThread(NULL, 0, moverRanas, 0, 0, NULL), NULL, "CreateThread()\n");
+		}
+		else {
+			printf("partoRanas()\n");
+			exit(777);
+		}
 		for (int nTroncos = 0; nTroncos < 7; nTroncos++) {
 			FERROR(WaitForSingleObject(control, INFINITE), WAIT_FAILED, "WaitForSingleObject()\n"); //Reserva posición
 			funciones.avanceTroncos(nTroncos);
-			//if ((*pY > 3 && *pY < 11) && ((*pY) == 10 - nTroncos)) {
-			if (((*pY) == 10 - nTroncos)) {
-				cont = 1;
-				if (dirs[nTroncos]){//Si troncos se mueven a la izquierda
-					EnterCriticalSection(&sc);
-					//INT InterlockedDecrement(*pX);
-					(*pX)--;
-					LeaveCriticalSection(&sc);
-				}
-				else {
-					EnterCriticalSection(&sc);
-					//INT InterlockedIncrement(*pX);
-					(*pX)++;
-					LeaveCriticalSection(&sc);
-				}
+			EnterCriticalSection(&sc);
+			cont = 1; //Si se han movido los troncos
+			LeaveCriticalSection(&sc);
+			
+			if (dirs[nTroncos]){//Si troncos se mueven a la izquierda
+				mov = -1;
+			}
+			else {
+				mov = 1;
 			}
 			funciones.pausa();
-
+			
+			for(int i = HOR_MIN; i < HOR_MAX; i++)
+				if (ranasTroncos[(10 - nTroncos)][i] != 0)
+					ranasTroncos[(10 - nTroncos)][i] = ranasTroncos[(10 - nTroncos)][i] + mov;
+			
 			FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
 		}
 	}
@@ -174,79 +176,95 @@ void criar(int pos) {
 
 DWORD WINAPI moverRanas(LPVOID lpParam) {
 	int sentido;
-	int preX, preY, posX, posY;
+	int posX, posY, preX, preY, X, Xx;
 
-	preX = (15 + 16 * posicion);
-	preY = 0;
+	preX = posX= (15 + 16 * posicion);
+	preY = posY = 0;
+	ranasTroncos[preY][preX] = preX;
+	
 	while (TRUE) {
 		FERROR(WaitForSingleObject(control, INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
-		if (!cont) {
+
+		//ACTUALIZA POSICIÓN
+		preY = posY;
+		
+		//DEBUG
+		X = posX;
+		Xx = ranasTroncos[posY][posX];
+		if (Xx == 0)
+			printf("");
+		//
+
+		EnterCriticalSection(&sc1);
+		if (posY != preY && posX != preX)
+			ranasTroncos[preY][preX] = 0;
+		posX = ranasTroncos[posY][posX];
+		LeaveCriticalSection(&sc1);
+
+		if ( (posX < 0) || (posX > 79) ) {
 			EnterCriticalSection(&sc);
-			*pX = preX;
-			*pY = preY;
-			LeaveCriticalSection(&sc);
-		}
-		if ((*pX) < 0 || (*pX) > 79) {
 			cont = 0;
+			LeaveCriticalSection(&sc);
 			(*perdidas)++;
-			preY = preX = -1;
+			posY = posX = -1;
 			FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
 			break;
 		}
 
-		EnterCriticalSection(&sc);
-		preX = *pX;
-		preY = *pY;
-		LeaveCriticalSection(&sc);
-
-		if (funciones.puedoSaltar(preX, preY, ARRIBA)) sentido = ARRIBA;
-		else if (funciones.puedoSaltar(preX, preY, IZQUIERDA)) sentido = IZQUIERDA;
-		else if (funciones.puedoSaltar(preX, preY, DERECHA)) sentido = DERECHA;
+		if (funciones.puedoSaltar(posX, posY, ARRIBA)) sentido = ARRIBA;
+		else if (funciones.puedoSaltar(posX, posY, IZQUIERDA)) sentido = IZQUIERDA;
+		else if (funciones.puedoSaltar(posX, posY, DERECHA)) sentido = DERECHA;
 		else {
 			funciones.pausa();
+			FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
 			continue;
 		}
 
-		EnterCriticalSection(&sc);
-		preX = *pX;
-		preY = *pY;
-		LeaveCriticalSection(&sc);
-		posX = preX;
-		posY = preY;
-		FERROR(WaitForSingleObject(mu[preX][preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
-		if (!funciones.avanceRanaIni(preX, preY))
-			printf("");
-		if (!funciones.avanceRana(&preX, &preY, sentido))
-			printf("");
-		FERROR(ReleaseMutex(mu[posX][posY]), 0, "ReleaseMutex()\n");
+		preX = posX;
+		preY = posY;
+		FERROR(WaitForSingleObject(mu[posX][posY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n");
+		funciones.avanceRanaIni(posX, posY);
+		funciones.avanceRana(&posX, &posY, sentido);
+		FERROR(ReleaseMutex(mu[preX][preY]), 0, "ReleaseMutex()\n"); //Libera el mutex anterior
+		
+		//ACTUALIZA POSICIÓN
+		EnterCriticalSection(&sc1);
+		if (posY != preY && posX != preX)
+			ranasTroncos[preY][preX] = 0;
+		ranasTroncos[posY][posX] = posX;
+		LeaveCriticalSection(&sc1);
 
-		EnterCriticalSection(&sc);
-		*pX = preX;
-		*pY = preY;
-		LeaveCriticalSection(&sc);
-
-		if ((preX) < 0 || (preX) > 79) {
+		//funciones.pausa();
+		
+		if ((posX) < 0 || (posX) > 79) {
+			EnterCriticalSection(&sc);
 			cont = 0;
+			LeaveCriticalSection(&sc);
 			(*perdidas)++;
-			FERROR(ReleaseMutex(mu[preX][preY]), 0, "ReleaseMutex()\n");
-			preY = preX = -1;
-			//FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
-			break;
-		}
-
-		FERROR(WaitForSingleObject(mu[preX][preY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n"); //Reserva posición a la que va a saltar
-		if (!funciones.avanceRanaFin(preX, preY))
-			printf("");
-		if (preY == 11) {
-			cont = 0;
-			(*salvadas)++;
-			FERROR(ReleaseMutex(mu[preX][preY]), 0, "ReleaseMutex()\n");
-			preY = preX = -1;
+			FERROR(ReleaseMutex(mu[posX][posY]), 0, "ReleaseMutex()\n");
+			posY = posX = -1;
 			FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
 			break;
 		}
+
+		FERROR(WaitForSingleObject(mu[posX][posY], INFINITE), WAIT_FAILED, "WaitForSingleObject()\n"); //Reserva posición a la que va a saltar
+		funciones.avanceRanaFin(posX, posY);
+		
+		if (posY == 11) {
+			EnterCriticalSection(&sc);
+			cont = 0;
+			LeaveCriticalSection(&sc);
+			(*salvadas)++;
+			FERROR(ReleaseMutex(mu[posX][posY]), 0, "ReleaseMutex()\n");
+			posY = posX = -1;
+			FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
+			break;
+		}
+		
+		EnterCriticalSection(&sc);
 		cont = 0;
-		FERROR(ReleaseMutex(mu[preX][preY]), 0, "ReleaseMutex()\n"); //Libera posición en la que saltó
+		LeaveCriticalSection(&sc);
+		FERROR(ReleaseMutex(mu[posX][posY]), 0, "ReleaseMutex()\n"); //Libera posición en la que saltó
 		FERROR(ReleaseMutex(control), 0, "ReleaseMutex()\n");
 	}
 	return 0; //El hilo termina
