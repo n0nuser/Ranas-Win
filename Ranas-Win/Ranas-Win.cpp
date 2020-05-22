@@ -11,20 +11,11 @@
 #include <iostream>
 #include "ranas.h"
 
-typedef BOOL DESTINO, * PDESTINO;
-typedef HANDLE TRONCOS, * PTRONCOS, ORILLA, * PORILLA;
-
 #define HOR_MIN 0
 #define HOR_MAX 79
 #define VER_MIN 0
-#define VER_MAX 11 //Orilla
-#define ORILLA_MIN 0
-#define ORILLA_MAX 3
-#define TRONCOS_MIN 4
-#define TRONCOS_MAX 10
+#define VER_MAX 12 //Orilla
 #define TIEMPO 30000
-#define NUMSC 5
-
 
 #define FERROR(ReturnValue,ErrorValue,ErrorMsg)											\
     do{																					\
@@ -33,8 +24,8 @@ typedef HANDLE TRONCOS, * PTRONCOS, ORILLA, * PORILLA;
         }																				\
     }while(0)
 
-
-struct funcionesDLL {
+struct funcionesDLL //Guarda funciones .dll en un struct
+{
 	HINSTANCE ranasDLL;
 	TIPO_AVANCERANA avanceRana;
 	TIPO_AVANCERANAINI avanceRanaIni;
@@ -50,29 +41,25 @@ struct funcionesDLL {
 	TIPO_PRINTMSG printMSG;
 } funciones;
 
-//FUNCIONES
-void tratarArg(int argc, char* argv[]);
-int cargarRanas();
-void criar(int pos);
-DWORD WINAPI moverRanas(LPVOID lpParam);
+/* ======================================= FUNCIONES ======================================= */
+void tratarArg(int argc, char* argv[]); //Tratamiento argumentos
+int cargarRanas(); //Carga de biblioteca .dll
+void criar(int pos); //Función a la que llama cada hilo madre
+DWORD WINAPI moverRanas(LPVOID lpParam); //Función que realiza cada ranita
 
 
-//VAR GLOBALES
+/* ======================================= VAR GLOBLALES ======================================= */
 PLONG nacidas, salvadas, perdidas;
-//PINT pX, pY;
 int posicion; //Se utiliza para pasarle "pos" a los movXY de moverRanas desde f_criar
 int lTroncos[] = { 10,10,10,10,10,10,10 };
 int lAguas[] = { 1,1,1,1,1,1,1 };
 int dirs[] = { 1,0,1,0,1,0,1 };
-//int dirs[] = { 0,0,0,0,0,0,0 };
-int ini = 0, noTerminado = 1;
+int noTerminado = 1;
 int ranasTroncos[12][80];
-
-HANDLE semaforo_troncos;
 
 //MUTEXES
 HANDLE mu[80][12], control;
-CRITICAL_SECTION sc[NUMSC];
+CRITICAL_SECTION sc0;
 
 /* ======================================= MAIN ======================================= */
 
@@ -85,44 +72,46 @@ int main(int argc, char* argv[])
 	int velocidad, parto;
 	int i, j;
 
-	//TRATAMIENTO ARGUMENTOS
 	tratarArg(argc, argv);
 	velocidad = atoi(argv[1]);
 	parto = atoi(argv[2]);
 
-	//CARGA DE LAS FUNCIONES DE BIBLIOTECA
 	FERROR(cargarRanas(), -1, "cargarRanas()\n");
 
-	//INICIALIZACIÓN MEMORIA
+	/***********************************************************************************************************************************
+	************************************************************RECURSOS****************************************************************
+	***********************************************************************************************************************************/
+	//VARIABLES
 	nacidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
 	salvadas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
 	perdidas = (PLONG)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLONG));
 	*nacidas = *salvadas = *perdidas = 0;
 
-	//MATRIZ 80x25 MUTEX
-	//DAR ESPACIO MEMORIA A HANDLE mu
-	for (i = HOR_MIN; i <= HOR_MAX; i++)
-		for (j = VER_MIN; j <= VER_MAX; j++)
-			FERROR(mu[i][j] = (HANDLE)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HANDLE)), NULL, "HeapAlloc()\n");
-	//CARGAR HANDLE mu CON MUTEX
-	for (i = HOR_MIN; i <= HOR_MAX; i++)
-		for (j = VER_MIN; j <= VER_MAX; j++)
-			FERROR(mu[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
-
-	for (i = 0; i < 12; i++)
+	for (i = VER_MIN; i < VER_MAX; i++)
 		for (j = HOR_MIN; j < HOR_MAX; j++)
 			ranasTroncos[i][j] = 0;
 
+	//HANDLES (Mutex)
+	for (i = HOR_MIN; i <= HOR_MAX; i++)
+		for (j = VER_MIN; j < VER_MAX; j++)
+			FERROR(mu[i][j] = (HANDLE)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HANDLE)), NULL, "HeapAlloc()\n");
+	//CARGAR HANDLE mu CON MUTEX
+	for (i = HOR_MIN; i <= HOR_MAX; i++)
+		for (j = VER_MIN; j < VER_MAX; j++)
+			FERROR(mu[i][j] = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
+
 	FERROR(control = (HANDLE)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HANDLE)), NULL, "HeapAlloc()\n");
 	FERROR(control = CreateMutex(NULL, FALSE, NULL), NULL, "CreateMutex()\n");
-
-	for(int i = 0; i < NUMSC; i++)
-		InitializeCriticalSection(&sc[i]);
-
-	//INICIO DEL PROGRAMA
+	
+	//HANDLE (Seccion Critica)
+	InitializeCriticalSection(&sc0);
+	
+	/***********************************************************************************************************************************
+	*******************************************************INICIO DEL PROGRAMA**********************************************************
+	***********************************************************************************************************************************/
 	FERROR(funciones.inicioRanas(velocidad, lTroncos, lAguas, dirs, parto, criar), FALSE, "inicioRanas()\n");
 
-	Sleep(TIEMPO); // Se debe esperar 30 segundos para finalizar el programa
+	Sleep(TIEMPO);
 
 	//CERRAMOS RECURSOS
 	noTerminado = 0;
@@ -130,21 +119,21 @@ int main(int argc, char* argv[])
 	funciones.finRanas();
 
 	for (i = HOR_MIN; i <= HOR_MAX; i++)
-		for (j = VER_MIN; j <= VER_MAX; j++)
+		for (j = VER_MIN; j < VER_MAX; j++)
 			CloseHandle(mu[i][j]);
 
 	CloseHandle(control);
-	//FERROR(CloseHandle(block), NULL, "CloseHandle()\n");
-	for (int i = 0; i < NUMSC; i++)
-		DeleteCriticalSection(&sc[i]);
+
+	DeleteCriticalSection(&sc0);
 
 	funciones.comprobarEstadisticas(*nacidas, *salvadas, *perdidas);
+
 	return 0;
 }
 
 void criar(int pos) {
 	int mov = 0;
-	EnterCriticalSection(&sc[0]);
+	EnterCriticalSection(&sc0); //Para control de Posicion
 	while (noTerminado) {
 		WaitForSingleObject(mu[(15 + 16 * pos)][0], INFINITE);
 		if (funciones.partoRanas(pos)) {
@@ -153,6 +142,7 @@ void criar(int pos) {
 			CreateThread(NULL, 0, moverRanas, 0, 0, NULL);
 		}
 		ReleaseMutex(mu[(15 + 16 * pos)][0]);
+
 		for (int nTroncos = 0; nTroncos < 7; nTroncos++) {
 			WaitForSingleObject(control, INFINITE); //Reserva posición
 			funciones.avanceTroncos(nTroncos);
@@ -160,14 +150,15 @@ void criar(int pos) {
 				mov = -1;
 			else
 				mov = 1;
-			//funciones.pausa();
-			for (int i = HOR_MIN; i < HOR_MAX; i++)
+			funciones.pausa();
+			for (int i = HOR_MIN; i < HOR_MAX; i++) {
+				if (ranasTroncos[(10 - nTroncos)][i] < 0 || ranasTroncos[(10 - nTroncos)][i] > 79) ranasTroncos[(10 - nTroncos)][i] = 0; //Si se desborda mete un 0
 				if (ranasTroncos[(10 - nTroncos)][i] != 0) {
 					WaitForSingleObject(mu[(10 - nTroncos)][i], INFINITE);
-					ranasTroncos[(10 - nTroncos)][i] = ranasTroncos[(10 - nTroncos)][i] + mov;
+					ranasTroncos[(10 - nTroncos)][i] = ranasTroncos[(10 - nTroncos)][i] + mov; //Mete en el valor actual de la ranita, la posición nueva que va a tener
 					ReleaseMutex(mu[(10 - nTroncos)][i]);
 				}
-			funciones.pausa();
+			}
 			ReleaseMutex(control);
 		}
 	}
@@ -177,9 +168,10 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 	int sentido;
 	int posX, posY, preX, preY, valor, tempX;
 	
-	valor = (15 + 16 * posicion);
-	LeaveCriticalSection(&sc[0]);
+	valor = (15 + 16 * posicion); //Control posicion
+	LeaveCriticalSection(&sc0);
 
+	//Valores iniciales ranita
 	WaitForSingleObject(mu[(15 + 16 * posicion)][0], INFINITE);
 	tempX = preX = posX = valor;
 	preY = posY = 0;
@@ -187,27 +179,27 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 	ReleaseMutex(mu[(15 + 16 * posicion)][0]);
 
 	while (noTerminado) {
-		
-		if (ranasTroncos[posY][posX] < 0 || ranasTroncos[posY][posX] > 78 || (tempX) < 0 || (tempX) > 78 || (posX) < 0 || (posX) > 78 || (preX) < 0 || (preX) > 78) {
-			(*perdidas)++;
-			break;
-		}
-		
-		WaitForSingleObject(control, INFINITE);
+		WaitForSingleObject(control, INFINITE); //Cada ranita posee el mutex hasta que hace avance efectivo
 		//ACTUALIZA POSICIÓN
 		if (ranasTroncos[posY][posX] == 0) {
 			funciones.pausa();
 			ReleaseMutex(control);
 			ExitThread(777);
-			//break;
-			continue;
+			break;
 		}
 
 		WaitForSingleObject(mu[posX][posY], INFINITE);
 		tempX = posX;
-		posX = ranasTroncos[posY][posX];
-		ranasTroncos[preY][preX] = 0;
+		posX = ranasTroncos[posY][posX]; //Ranita actualiza posicion por si tronco la ha movido
+		ranasTroncos[preY][preX] = 0; //Mete un 0 en la posicion anterior
 		ReleaseMutex(mu[tempX][posY]);
+
+		//COMPROBACION SI SALE DE LA PANTALLA
+		if ((tempX) < 0 || (tempX) > 79 || (posX) < 0 || (posX) > 79 || (preX) < 0 || (preX) > 79) {
+			(*perdidas)++;
+			ReleaseMutex(control);
+			break;
+		}
 
 		if (funciones.puedoSaltar(posX, posY, ARRIBA)) sentido = ARRIBA;
 		else if (funciones.puedoSaltar(posX, posY, IZQUIERDA)) sentido = IZQUIERDA;
@@ -218,9 +210,9 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 			continue;
 		}
 
-		WaitForSingleObject(mu[posX][posY], INFINITE);
 		preX = posX;
 		preY = posY;
+		WaitForSingleObject(mu[posX][posY], INFINITE);
 		if (funciones.avanceRanaIni(posX, posY) == FALSE) {
 			ReleaseMutex(mu[posX][posY]);
 			ReleaseMutex(control);
@@ -230,33 +222,30 @@ DWORD WINAPI moverRanas(LPVOID lpParam) {
 		funciones.avanceRana(&posX, &posY, sentido);
 		ReleaseMutex(mu[preX][preY]); //Libera el mutex anterior
 
+		funciones.pausa();
+
 		//ACTUALIZA POSICIÓN
 		WaitForSingleObject(mu[posX][posY], INFINITE);
-		ranasTroncos[posY][posX] = posX;
-		ranasTroncos[preY][preX] = 0;
+		ranasTroncos[posY][posX] = posX; //Mete nueva posicion en el array
+		ranasTroncos[preY][preX] = 0; // Pone a 0 la antigua
 		ReleaseMutex(mu[posX][posY]);
 
-		if (ranasTroncos[posY][posX] < 0 || ranasTroncos[posY][posX] > 78 || (tempX) < 0 || (tempX) > 78 || (posX) < 0 || (posX) > 78 || (preX) < 0 || (preX) > 78) {
+		//COMPROBACION SI SALE DE LA PANTALLA
+		if ((tempX) < 0 || (tempX) > 78 || (posX) < 0 || (posX) > 78 || (preX) < 0 || (preX) > 78) {
 			(*perdidas)++;
 			ReleaseMutex(control);
 			break;
 		}
 
-		WaitForSingleObject(mu[posX][posY], INFINITE); //Reserva posición a la que va a saltar
+		WaitForSingleObject(mu[posX][posY], INFINITE);
 		funciones.avanceRanaFin(posX, posY);
-		if (posY == 11) {
+		if (posY == 11) { //Si llega a orilla
 			(*salvadas)++;
-			ReleaseMutex(mu[posX][posY]);
 			ReleaseMutex(control);
 			break;
 		}
-		ReleaseMutex(mu[posX][posY]); //Libera posición en la que saltó
+		ReleaseMutex(mu[posX][posY]);
 		ReleaseMutex(control);
-		
-		if (ranasTroncos[posY][posX] < 0 || ranasTroncos[posY][posX] > 78 || (tempX) < 0 || (tempX) > 78 || (posX) < 0 || (posX) > 78 || (preX) < 0 || (preX) > 78) {
-			(*perdidas)++;
-			break;
-		}
 	}
 	return 0; //El hilo termina
 }
