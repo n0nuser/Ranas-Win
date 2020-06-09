@@ -1,6 +1,11 @@
 # PRÁCTICAS DE SISTEMAS OPERATIVOS II
 ## SEGUNDA PRÁCTICA EVALUABLE - Ranas
 
+### NOTA FINAL: 6.5
+
+- Sergio García González
+- Pablo Jesús González Rubio
+
 ### Enunciado. 
 
 El programa propuesto constará de un único fichero fuente, _ranas.cpp_, cuya adecuada compilación producirá el ejecutable _ranas.exe_. Se trata de simular mediante un programa que realice llamadas a la API de WIN32 la vida de unas ranas, inspirada en el famoso juego de consola clásico "Frogger". Según se va ejecutando el programa, se ha de ver una imagen parecida a la siguiente:
